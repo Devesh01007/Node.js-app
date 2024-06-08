@@ -1,0 +1,5 @@
+Create a directory for your Terraform files:
+mkdir infra
+cd infra
+
+
