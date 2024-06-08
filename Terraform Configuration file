@@ -3,3 +3,84 @@ mkdir infra
 cd infra
 
 
+Create the file.
+main.tf:
+provider "aws" {
+  region = "us-east-1"
+}
+
+resource "aws_ecr_repository" "hello_world" {
+  name = "hello-world-repo"
+}
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+}
+
+resource "aws_subnet" "subnet" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "us-east-1a"
+}
+
+resource "aws_ecs_cluster" "hello_world" {
+  name = "hello-world-cluster"
+}
+
+resource "aws_ecs_task_definition" "hello_world" {
+  family                = "hello-world-task"
+  requires_compatibilities = ["FARGATE"]
+  network_mode          = "awsvpc"
+  cpu                   = "256"
+  memory                = "512"
+  execution_role_arn    = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn         = aws_iam_role.ecs_task_execution_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "hello-world"
+      image     = "${aws_ecr_repository.hello_world.repository_url}:latest"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 3000
+          hostPort      = 3000
+        }
+      ]
+    }
+  ])
+}
+
+resource "aws_ecs_service" "hello_world" {
+  name            = "hello-world-service"
+  cluster         = aws_ecs_cluster.hello_world.id
+  task_definition = aws_ecs_task_definition.hello_world.arn
+  desired_count   = 1
+
+  network_configuration {
+    subnets         = [aws_subnet.subnet.id]
+    assign_public_ip = true
+  }
+}
+
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "ecsTaskExecutionRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+  ]
+}
+
